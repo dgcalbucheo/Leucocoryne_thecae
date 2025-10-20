@@ -81,7 +81,7 @@ fit_firth <- glm(Dehiscence ~ ST, data = df_ok,
 # Con brglm2, se acostumbra reportar prueba Wald (o LRT si corresponde)
 # Opción A: Wald tipo II
 car::Anova(fit_firth, type = "II", test.statistic = "Wald")
-
+ 
 # Opción B: anova con Chi-cuadrado (reportar con cautela; puede ser muy similar)
 anova(fit_firth, test = "Chisq")
 
