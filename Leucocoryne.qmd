@@ -9,7 +9,7 @@ format: html
 #| warning: false
 #| include: false
 required_packages <- c(
-  "tidyverse", "emmeans", "multcomp", "car", "here"
+  "tidyverse", "here", "FSA", "rcompanion"
 )
 
 lapply(required_packages, function(pkg) {
@@ -39,105 +39,23 @@ df$ST <- droplevels(df$ST)  # por si algún ST quedó vacío
 ```
 
 
-#GLM
+#Modelo
 ```{r}
-m1<-glm(Dehiscence ~ ST, data = df, family = binomial)
+# 2) Kruskal–Wallis global
+kruskal.test(Dehiscence ~ ST, data = df)
 
-m1
+# 3) Post hoc Dunn con Bonferroni
+dunn_res <- dunnTest(Dehiscence ~ ST, data = df, method = "bonferroni")
 
-# (Alternativa) Dejar que glm ignore NAs y mantenga longitudes en residuales ANTES DE LIMPIAR NAs!!
-# m2 <- glm(Dehiscence ~ ST, family = binomial,
-              # data = df, na.action = na.exclude)
+# 4) Extraer letras de agrupamiento
+letters <- cldList(P.adj ~ Comparison,
+                   data = dunn_res$res,
+                   threshold = 0.05)
+
+letters
 ```
 
-##Corrección de sesgo de separación
-```{r}
-# Sesgo de Firth 
-# Paquetes
-library(tidyverse)
-library(brglm2)    # Firth/bias-reduced logistic via brglmFit
-library(emmeans)   # EMMs y comparaciones múltiples
-library(multcomp)  # soporte para cld() si hace falta
-library(car)       # Anova tipo II (opcional)
 
-# 1) Preparación de datos -----------------------------------------------
-# Asumo un data.frame df con columnas: ST (ST1–ST5) y Dehiscence (0/1)
-df_ok <- df %>%
-  filter(!is.na(ST), !is.na(Dehiscence)) %>%
-  mutate(
-    ST = factor(ST, levels = c("ST1","ST2","ST3","ST4","ST5")),
-    Dehiscence = as.integer(Dehiscence)
-  )
-
-# Diagnóstico rápido
-xtabs(~ ST + Dehiscence, data = df_ok)
-
-# 2) Modelo principal: logística con corrección de sesgo (Firth/brglm2) --
-# Usamos glm() con method = brglmFit para obtener estimadores finitos bajo separación
-fit_firth <- glm(Dehiscence ~ ST, data = df_ok,
-                 family = binomial, method = brglmFit)
-
-# 3) Efecto global de ST -------------------------------------------------
-# Con brglm2, se acostumbra reportar prueba Wald (o LRT si corresponde)
-# Opción A: Wald tipo II
-car::Anova(fit_firth, type = "II", test.statistic = "Wald")
- 
-# Opción B: anova con Chi-cuadrado (reportar con cautela; puede ser muy similar)
-anova(fit_firth, test = "Chisq")
-
-# 4) Medias ajustadas (probabilidades) y comparaciones múltiples ---------
-emm <- emmeans(fit_firth, ~ ST, type = "response")  # escala de prob.: prob, SE, lower.CL, upper.CL
-emm
-
-# Comparaciones por pares con ajuste (Tukey). Puedes usar "tukey" o "sidak"/"holm"
-cmp <- pairs(emm, adjust = "tukey")
-cmp
-
-# Letras de grupos para la figura (en escala de probabilidad)
-# (Si cld pide multcomp, ya lo cargamos arriba)
-emm_letters <- cld(emm, adjust = "tukey", Letters = letters) %>%
-  as_tibble() %>%
-  dplyr::select(ST, prob, SE, asymp.LCL, asymp.UCL, .group)
-
-emm_letters
-# -> Une 'emm_letters' a tu tabla base de la Figura 2c para mostrar letras sobre cada ST
-
-# 5) (Opcional) Chequeo de sobre/infra-dispersión ------------------------
-phihat <- sum(residuals(fit_firth, type = "pearson")^2) / df.residual(fit_firth)
-phihat  # ~1 ok; >>1 sobre-dispersión; <<1 infra-dispersión (solo para informar)
-
-# 6) (Opcional) Sensibilidad con Fisher por pares + ajuste ---------------
-# Útil dado que tienes celdas extremas (0/21, 21/21)
-tab <- df_ok %>%
-  count(ST, Dehiscence) %>%
-  tidyr::pivot_wider(names_from = Dehiscence, values_from = n, values_fill = 0) %>%
-  rename(n0 = `0`, n1 = `1`)
-tab
-
-# Matriz de p-valores Fisher por pares
-STs <- levels(df_ok$ST)
-pv <- matrix(1, nrow = length(STs), ncol = length(STs), dimnames = list(STs, STs))
-
-for(i in 1:(length(STs)-1)){
-  for(j in (i+1):length(STs)){
-    m <- matrix(c(
-      tab$n1[tab$ST==STs[i]], tab$n0[tab$ST==STs[i]],
-      tab$n1[tab$ST==STs[j]], tab$n0[tab$ST==STs[j]]
-    ), nrow = 2, byrow = TRUE)
-    pv[i, j] <- fisher.test(m)$p.value
-    pv[j, i] <- pv[i, j]
-  }
-}
-
-# Ajuste por multiplicidad (Holm) y letras (si quisieras derivarlas de Fisher)
-pv_adj <- matrix(p.adjust(pv[upper.tri(pv)], method = "holm"),
-                 nrow = length(STs)-1)
-# (Para letras desde una matriz de p-valores, puedes usar multcompView::multcompLetters,
-# construyendo una lista de comparaciones significativas a alpha dado)
-
-
-
-```
 
 
 
