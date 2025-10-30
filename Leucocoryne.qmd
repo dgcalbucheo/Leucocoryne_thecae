@@ -59,6 +59,50 @@ letters
 
 
 
+```{r}
+# Paquetes necesarios
+library(dplyr)
+library(FSA)          # para dunnTest()
+library(rcompanion)   # para cldList()
+library(openxlsx)     # para exportar a Excel
+
+# 1) Kruskal–Wallis global
+kw <- kruskal.test(Dehiscence ~ ST, data = df)
+
+# 2) Post hoc Dunn con Bonferroni
+dunn_res <- dunnTest(Dehiscence ~ ST, data = df, method = "bonferroni")
+
+# 3) Letras de agrupamiento
+letters <- cldList(P.adj ~ Comparison,
+                   data = dunn_res$res,
+                   threshold = 0.05)
+
+# 4) Tabla descriptiva (medias, sd, se)
+summary_tab <- df %>%
+  group_by(ST) %>%
+  summarise(
+    mean = mean(Dehiscence, na.rm = TRUE),
+    sd   = sd(Dehiscence, na.rm = TRUE),
+    n    = n(),
+    se   = sd / sqrt(n)
+  ) %>%
+  left_join(letters, by = c("ST" = "Group"))
+
+# 5) Agregar p global como columna
+summary_tab$KW_pvalue <- kw$p.value
+
+# 6) Exportar a Excel
+write.xlsx(summary_tab, file = "kruskal_dunn_summary.xlsx")
+
+# Revisa el archivo en tu directorio de trabajo
+
+
+```
+
+
+
+
+
 
 
 
